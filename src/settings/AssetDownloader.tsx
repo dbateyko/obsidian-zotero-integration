@@ -1,7 +1,9 @@
-import download from 'download';
 import { Notice, debounce } from 'obsidian';
 import os from 'os';
+import path from 'path';
+import { promises as fs } from 'fs';
 import React from 'react';
+import { execa } from 'execa';
 import {
   checkEXEVersion,
   doesEXEExist,
@@ -48,37 +50,52 @@ function getDownloadUrl() {
 
 export async function downloadAndExtract() {
   const url = getDownloadUrl();
-
   console.log('Obsidian Zotero Integration: Downloading ' + url);
+  if (!url) {
+    return false;
+  }
 
-  if (!url) return false;
-
+  const exeDir = getExeRoot();
   try {
-    if (doesLegacyEXEExist2()) {
-      removeLegacyEXE2();
-    }
+    if (doesLegacyEXEExist2()) removeLegacyEXE2();
+    if (doesLegacyEXEExist()) removeLegacyEXE();
+    if (doesEXEExist()) removeEXE();
 
-    if (doesLegacyEXEExist()) {
-      removeLegacyEXE();
+    const archiveName = url.split('/').pop();
+    if (!archiveName) {
+      throw new Error(`Invalid URL for PDF utility: ${url}`);
     }
+    const tmpArchive = path.join(os.tmpdir(), archiveName);
 
-    if (doesEXEExist()) {
-      removeEXE();
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`Failed to download PDF utility: ${response.statusText}`);
     }
+    const data = Buffer.from(await response.arrayBuffer());
+    await fs.writeFile(tmpArchive, data);
 
-    await download(url, getExeRoot(), {
-      extract: true,
-    });
+    if (archiveName.endsWith('.tar.gz') || archiveName.endsWith('.tgz')) {
+      await execa('tar', ['-xzf', tmpArchive, '-C', exeDir]);
+    } else if (archiveName.endsWith('.zip')) {
+      if (os.platform() === 'win32') {
+        await execa('powershell.exe', [
+          '-NoProfile',
+          '-Command',
+          `Expand-Archive -Path "${tmpArchive}" -DestinationPath "${exeDir}" -Force`,
+        ]);
+      } else {
+        await execa('unzip', ['-o', tmpArchive, '-d', exeDir]);
+      }
+    } else {
+      throw new Error(`Unsupported archive format: ${archiveName}`);
+    }
+    await fs.unlink(tmpArchive);
 
     scopeExe();
   } catch (e) {
     console.error(e);
-    new Notice(
-      'Error downloading PDF utility. Check the console for more details.',
-      10000
-    );
+    new Notice('Error downloading PDF utility. Check the console for more details.', 10000);
   }
-
   return true;
 }
 

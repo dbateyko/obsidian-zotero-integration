@@ -43,3 +43,7 @@ You can export the PDF annotation in Zotero directly into a note. Downside is th
 
 ## Unanswered questions
 - What is the difference of the various Bibtex configuration in the plugin configuration?
+
+## Automatic .bib Metadata Sync
+
+In the plugin settings, enable **Enable .bib auto-sync** to watch your configured Better BibTeX `.bib` file for changes. When the file is modified, the plugin will diff updated metadata and patch only the changed fields in your notes' YAML frontmatter. Customize **Auto-sync debounce delay (ms)** to adjust how quickly changes are detected after a file save.

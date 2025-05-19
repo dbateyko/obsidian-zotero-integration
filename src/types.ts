@@ -63,6 +63,14 @@ export interface ExportToMarkdownParams {
   settings: ZoteroConnectorSettings;
   database: DatabaseWithPort;
   exportFormat: ExportFormat;
+  /**
+   * When true, skip creating markdown files for items or attachments without annotations
+   */
+  skipIfNoAnnotations?: boolean;
+  /**
+   * When true, suppress loading modal for fetching data from Zotero
+   */
+  silent?: boolean;
 }
 
 export interface RenderCiteTemplateParams {
@@ -80,6 +88,14 @@ export interface ZoteroConnectorSettings {
   exeOverridePath?: string;
   exportFormats: ExportFormat[];
   noteImportFolder: string;
+  zoteroExportFolder: string;
+  betterBibFilePath: string;
+  /** Enable automatic metadata sync when the Better BibTeX .bib file changes */
+  autoSyncBibFile?: boolean;
+  /** Debounce delay in milliseconds for .bib file change events */
+  bibWatchDebounce?: number;
+  /** Last synced metadata map from citation keys to field values */
+  metadataMap?: Record<string, Record<string, any>>;
   openNoteAfterImport: boolean;
   pdfExportImageDPI?: number;
   pdfExportImageFormat?: string;
@@ -90,6 +106,8 @@ export interface ZoteroConnectorSettings {
   pdfExportImageTesseractPath?: string;
   settingsVersion?: number;
   shouldConcat?: boolean;
+  importedItems: Record<string, string>;
+  autorunOnStartup: boolean;
   whichNotesToOpenAfterImport: NotesToOpenAfterImport;
 }
 

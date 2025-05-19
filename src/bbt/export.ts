@@ -239,7 +239,8 @@ async function getRelations(
   libraryID: any,
   importDate: moment.Moment,
   database: DatabaseWithPort,
-  cslStyle?: string
+  cslStyle?: string,
+  silent: boolean = false
 ) {
   if (item.relations && !Array.isArray(item.relations)) {
     const relations: string[] = [];
@@ -253,12 +254,13 @@ async function getRelations(
   const relatedItems = await getItemJSONFromRelations(
     libraryID,
     item.relations,
-    database
+    database,
+    silent
   );
 
   for (const related of relatedItems) {
     if (getCiteKeyFromAny(related)) {
-      await processItem(related, importDate, database, cslStyle, true);
+      await processItem(related, importDate, database, cslStyle, true, silent);
     }
   }
 
@@ -270,7 +272,8 @@ async function processItem(
   importDate: moment.Moment,
   database: DatabaseWithPort,
   cslStyle?: string,
-  skipRelations?: boolean
+  skipRelations?: boolean,
+  silent: boolean = false
 ) {
   const citekey = getCiteKeyFromAny(item);
   item.importDate = importDate;
@@ -301,19 +304,19 @@ async function processItem(
     }
 
     try {
-      item.date = await getIssueDateFromCiteKey(citekey, database);
+      item.date = await getIssueDateFromCiteKey(citekey, database, silent);
     } catch {
       // We don't particularly care about this
     }
 
     try {
-      item.collections = await getCollectionFromCiteKey(citekey, database);
+      item.collections = await getCollectionFromCiteKey(citekey, database, silent);
     } catch {
       // We don't particularly care about this
     }
 
     try {
-      item.bibliography = await getBibFromCiteKey(citekey, database, cslStyle);
+      item.bibliography = await getBibFromCiteKey(citekey, database, cslStyle, undefined, silent);
     } catch {
       item.bibliography = 'Error generating bibliography';
     }
@@ -337,7 +340,8 @@ async function processItem(
       item.libraryID,
       importDate,
       database,
-      cslStyle
+      cslStyle,
+      silent
     );
   }
 }
@@ -547,7 +551,7 @@ export function getATemplatePath({ exportFormat }: ExportToMarkdownParams) {
   );
 }
 
-async function getAttachmentData(item: any, database: DatabaseWithPort) {
+async function getAttachmentData(item: any, database: DatabaseWithPort, silent?: boolean) {
   let mappedAttachments: Record<string, any> = {};
 
   try {
@@ -555,7 +559,8 @@ async function getAttachmentData(item: any, database: DatabaseWithPort) {
     if (citekey) {
       const fullAttachmentData = await getAttachmentsFromCiteKey(
         citekey,
-        database
+        database,
+        silent
       );
 
       mappedAttachments = ((fullAttachmentData || []) as any[]).reduce<
@@ -596,7 +601,7 @@ export async function exportToMarkdown(
   explicitCiteKeys?: CiteKey[]
 ): Promise<string[]> {
   const importDate = moment();
-  const { database, exportFormat, settings } = params;
+  const { database, exportFormat, settings, skipIfNoAnnotations = false, silent = false } = params;
   const sourcePath = getATemplatePath(params);
   const canExtract = doesEXEExist();
 
@@ -608,7 +613,11 @@ export async function exportToMarkdown(
   const libraryID = citeKeys[0].library;
   let itemData: any;
   try {
-    itemData = await getItemJSONFromCiteKeys(citeKeys, database, libraryID);
+    itemData = await getItemJSONFromCiteKeys(citeKeys, database, libraryID, silent);
+    if (!itemData) {
+      // No item data retrieved; abort import
+      return [];
+    }
   } catch (e) {
     return [];
   }
@@ -620,7 +629,7 @@ export async function exportToMarkdown(
   const createdOrUpdatedMarkdownFiles: string[] = [];
 
   for (const item of itemData) {
-    await processItem(item, importDate, database, exportFormat.cslStyle);
+    await processItem(item, importDate, database, exportFormat.cslStyle, false, silent);
   }
 
   const vaultRoot = getVaultRoot();
@@ -677,16 +686,18 @@ export async function exportToMarkdown(
   for (let i = 0, len = itemData.length; i < len; i++) {
     const item = itemData[i];
     const attachments = item.attachments as any[];
-    const attachmentData = await getAttachmentData(item, database);
+    const attachmentData = await getAttachmentData(item, database, silent);
 
     if (!attachments.length) {
-      const pathTemplateData = await applyBasicTemplates(sourcePath, {
-        annotations: [],
-        ...item,
-      });
-      const markdownPath = await getMarkdownPath(pathTemplateData);
+      if (!skipIfNoAnnotations) {
+        const pathTemplateData = await applyBasicTemplates(sourcePath, {
+          annotations: [],
+          ...item,
+        });
+        const markdownPath = await getMarkdownPath(pathTemplateData);
 
-      await queueRender(markdownPath, item);
+        await queueRender(markdownPath, item);
+      }
       continue;
     }
 
@@ -751,44 +762,50 @@ export async function exportToMarkdown(
       }
 
       if (isPDF && canExtract) {
-        try {
-          const res = await extractAnnotations(
-            attachmentPath,
-            {
-              imageBaseName: imageBaseName,
-              imageDPI: settings.pdfExportImageDPI,
-              imageFormat: settings.pdfExportImageFormat,
-              imageOutputPath: imageOutputPath,
-              imageQuality: settings.pdfExportImageQuality,
-              attemptOCR: settings.pdfExportImageOCR,
-              ocrLang: settings.pdfExportImageOCRLang,
-              tesseractPath: settings.pdfExportImageTesseractPath,
-              tessDataDir: settings.pdfExportImageTessDataDir,
-            },
-            settings.exeOverridePath
-          );
+        const pdfPath = attachmentPath;
+        if (!existsSync(pdfPath)) {
+          console.warn(`PDF not found, skipping annotations for ${pdfPath}`);
+        } else {
+          try {
+            const res = await extractAnnotations(
+              attachmentPath,
+              {
+                imageBaseName: imageBaseName,
+                imageDPI: settings.pdfExportImageDPI,
+                imageFormat: settings.pdfExportImageFormat,
+                imageOutputPath: imageOutputPath,
+                imageQuality: settings.pdfExportImageQuality,
+                attemptOCR: settings.pdfExportImageOCR,
+                ocrLang: settings.pdfExportImageOCRLang,
+                tesseractPath: settings.pdfExportImageTesseractPath,
+                tessDataDir: settings.pdfExportImageTessDataDir,
+              },
+              settings.exeOverridePath
+            );
 
-          let extracted = JSON.parse(res);
+            let extracted = JSON.parse(res);
 
-          for (const e of extracted) {
-            processAnnotation(e, attachment, imageRelativePath);
+            for (const e of extracted) {
+              processAnnotation(e, attachment, imageRelativePath);
+            }
+
+            if (settings.shouldConcat && extracted.length) {
+              extracted = concatAnnotations(extracted);
+            }
+
+            annots.push(...extracted);
+          } catch (e) {
+            // Skip annotation extraction errors
           }
-
-          if (settings.shouldConcat && extracted.length) {
-            extracted = concatAnnotations(extracted);
-          }
-
-          annots.push(...extracted);
-        } catch (e) {
-          //
         }
       }
 
       if (annots.length) {
         attachment.annotations = annots;
+        await queueRender(markdownPath, item);
+      } else if (!skipIfNoAnnotations) {
+        await queueRender(markdownPath, item);
       }
-
-      await queueRender(markdownPath, item);
     }
   }
 
@@ -844,8 +861,7 @@ export async function renderCiteTemplate(params: RenderCiteTemplateParams) {
   } catch (e) {
     return null;
   }
-
-  if (itemData.length === 0) {
+  if (!itemData || itemData.length === 0) {
     return null;
   }
 
@@ -896,6 +912,9 @@ export async function dataExplorerPrompt(settings: ZoteroConnectorSettings) {
   try {
     itemData = await getItemJSONFromCiteKeys(citeKeys, database, libraryID);
   } catch (e) {
+    return null;
+  }
+  if (!itemData) {
     return null;
   }
 

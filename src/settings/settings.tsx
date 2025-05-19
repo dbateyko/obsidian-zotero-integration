@@ -50,6 +50,15 @@ function SettingsComponent({
   const [ocrState, setOCRState] = React.useState(settings.pdfExportImageOCR);
 
   const [concat, setConcat] = React.useState(!!settings.shouldConcat);
+  const [autorunState, setAutorun] = React.useState(
+    !!settings.autorunOnStartup
+  );
+  const [autoSyncState, setAutoSyncState] = React.useState(
+    !!settings.autoSyncBibFile
+  );
+  const [debounceDelayState, setDebounceDelay] = React.useState(
+    settings.bibWatchDebounce ?? 500
+  );
 
   const updateCite = React.useCallback(
     debounce(
@@ -139,7 +148,6 @@ function SettingsComponent({
           <option value="Juris-M">Juris-M</option>
           <option value="Custom">Custom</option>
         </select>
-      </SettingItem>
       {useCustomPort ? (
         <SettingItem
           name="Port number"
@@ -155,6 +163,90 @@ function SettingsComponent({
           />
         </SettingItem>
       ) : null}
+      </SettingItem>
+      <SettingItem
+        name="Zotero Export Folder"
+        description="Path to the folder containing exported Zotero files (JSON or MD), or to the Zotero storage folder for PDF attachment imports."
+      >
+        <input
+          onChange={(e) =>
+            updateSetting(
+              'zoteroExportFolder',
+              (e.target as HTMLInputElement).value
+            )
+          }
+          type="text"
+          spellCheck={false}
+          placeholder="Example: /Users/you/zotero-export"
+          defaultValue={settings.zoteroExportFolder}
+        />
+      </SettingItem>
+      <SettingItem
+        name="Better BibTeX .bib File"
+        description="Path to the Better BibTeX .bib file for a Zotero collection."
+      >
+        <input
+          onChange={(e) =>
+            updateSetting(
+              'betterBibFilePath',
+              (e.target as HTMLInputElement).value
+            )
+          }
+          type="text"
+          spellCheck={false}
+          placeholder="Example: /Users/you/collection.bib"
+          defaultValue={settings.betterBibFilePath}
+        />
+      </SettingItem>
+      <SettingItem
+        name="Enable .bib auto-sync"
+        description="Automatically synchronize existing notes when the .bib file changes."
+      >
+        <div
+          onClick={() => {
+            setAutoSyncState((state) => {
+              updateSetting('autoSyncBibFile', !state);
+              return !state;
+            });
+          }}
+          className={`checkbox-container${
+            autoSyncState ? ' is-enabled' : ''
+          }`}
+        />
+      </SettingItem>
+      <SettingItem
+        name="Auto-sync debounce delay (ms)"
+        description="Milliseconds to debounce .bib file change events."
+      >
+        <input
+          type="number"
+          min="0"
+          disabled={!autoSyncState}
+          onChange={(e) => {
+            const v = Number((e.target as HTMLInputElement).value);
+            setDebounceDelay(v);
+            updateSetting('bibWatchDebounce', v);
+          }}
+          defaultValue={debounceDelayState.toString()}
+        />
+      </SettingItem>
+      <SettingItem
+        name="Autorun .bib import on startup"
+        description="Automatically import new items from the Better BibTeX .bib file (debounced) when Obsidian starts, if Zotero is running."
+      >
+        <div
+          onClick={() => {
+            setAutorun((state) => {
+              updateSetting('autorunOnStartup', !state);
+              return !state;
+            });
+          }}
+          className={`checkbox-container${
+            autorunState ? ' is-enabled' : ''
+          }`}
+        />
+      </SettingItem>
+
       <SettingItem
         name="Note Import Location"
         description="Notes imported from Zotero will be added to this folder in your vault"

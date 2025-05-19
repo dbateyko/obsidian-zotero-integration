@@ -54,12 +54,15 @@ export async function getNotesFromCiteKeys(
 
 export async function getCollectionFromCiteKey(
   citeKey: CiteKey,
-  database: DatabaseWithPort
+  database: DatabaseWithPort,
+  silent?: boolean
 ) {
   let res: string;
-
-  const modal = new LoadingModal(app, 'Fetching collections from Zotero...');
-  modal.open();
+  let modal: LoadingModal;
+  if (!silent) {
+    modal = new LoadingModal(app, 'Fetching collections from Zotero...');
+    modal.open();
+  }
 
   const qid = Symbol();
   try {
@@ -79,14 +82,14 @@ export async function getCollectionFromCiteKey(
     });
   } catch (e) {
     console.error(e);
-    modal.close();
+    if (!silent) modal.close();
     new Notice(`Error retrieving notes: ${e.message}`, 10000);
     ZQueue.end(qid);
     return null;
   }
 
   ZQueue.end(qid);
-  modal.close();
+  if (!silent) modal.close();
 
   try {
     const result = JSON.parse(res).result;
@@ -116,12 +119,15 @@ export async function getCollectionFromCiteKey(
 
 export async function getAttachmentsFromCiteKey(
   citeKey: CiteKey,
-  database: DatabaseWithPort
+  database: DatabaseWithPort,
+  silent?: boolean
 ) {
   let res: string;
-
-  const modal = new LoadingModal(app, 'Fetching collections from Zotero...');
-  modal.open();
+  let modal: LoadingModal;
+  if (!silent) {
+    modal = new LoadingModal(app, 'Fetching collections from Zotero...');
+    modal.open();
+  }
 
   const qid = Symbol();
   try {
@@ -141,14 +147,14 @@ export async function getAttachmentsFromCiteKey(
     });
   } catch (e) {
     console.error(e);
-    modal.close();
+    if (!silent) modal.close();
     new Notice(`Error retrieving notes: ${e.message}`, 10000);
     ZQueue.end(qid);
     return null;
   }
 
   ZQueue.end(qid);
-  modal.close();
+  if (!silent) modal.close();
 
   try {
     return JSON.parse(res).result;
@@ -310,12 +316,15 @@ export async function getBibFromCiteKeys(
 export async function getItemJSONFromCiteKeys(
   citeKeys: CiteKey[],
   database: DatabaseWithPort,
-  libraryID: number
+  libraryID: number,
+  silent?: boolean
 ) {
   let res: string;
-
-  const modal = new LoadingModal(app, 'Fetching data from Zotero...');
-  modal.open();
+  let modal: LoadingModal;
+  if (!silent) {
+    modal = new LoadingModal(app, 'Fetching data from Zotero...');
+    modal.open();
+  }
 
   const qid = Symbol();
   try {
@@ -339,14 +348,14 @@ export async function getItemJSONFromCiteKeys(
     });
   } catch (e) {
     console.error(e);
-    modal.close();
+    if (!silent) modal.close();
     new Notice(`Error retrieving item data: ${e.message}`, 10000);
     ZQueue.end(qid);
     return null;
   }
 
   ZQueue.end(qid);
-  modal.close();
+  if (!silent) modal.close();
 
   try {
     const parsed = JSON.parse(res);
@@ -367,12 +376,15 @@ export async function getItemJSONFromCiteKeys(
 export async function getItemJSONFromRelations(
   libraryID: number,
   relations: string[],
-  database: DatabaseWithPort
+  database: DatabaseWithPort,
+  silent?: boolean
 ) {
   let res: string;
-
-  const modal = new LoadingModal(app, 'Fetching data from Zotero...');
-  modal.open();
+  let modal: LoadingModal;
+  if (!silent) {
+    modal = new LoadingModal(app, 'Fetching data from Zotero...');
+    modal.open();
+  }
 
   const uriMap: Record<string, string> = {};
   const idOrder: string[] = [];
@@ -402,14 +414,14 @@ export async function getItemJSONFromRelations(
     });
   } catch (e) {
     console.error(e);
-    modal.close();
+    if (!silent) modal.close();
     new Notice(`Error retrieving item data: ${e.message}`, 10000);
     ZQueue.end(qid);
     return null;
   }
 
   ZQueue.end(qid);
-  modal.close();
+  if (!silent) modal.close();
 
   const idMap: Record<string, any> = {};
   const citekeys: CiteKey[] = [];
@@ -453,12 +465,15 @@ export async function getItemJSONFromRelations(
 
 export async function getIssueDateFromCiteKey(
   citeKey: CiteKey,
-  database: DatabaseWithPort
+  database: DatabaseWithPort,
+  silent?: boolean
 ) {
   let res: string;
-
-  const modal = new LoadingModal(app, 'Fetching data from Zotero...');
-  modal.open();
+  let modal: LoadingModal;
+  if (!silent) {
+    modal = new LoadingModal(app, 'Fetching data from Zotero...');
+    modal.open();
+  }
 
   const qid = Symbol();
   try {
@@ -482,14 +497,14 @@ export async function getIssueDateFromCiteKey(
     });
   } catch (e) {
     console.error(e);
-    modal.close();
+    if (!silent) modal.close();
     new Notice(`Error retrieving item data: ${e.message}`, 10000);
     ZQueue.end(qid);
     return null;
   }
 
   ZQueue.end(qid);
-  modal.close();
+  if (!silent) modal.close();
 
   try {
     const parsed = JSON.parse(res);

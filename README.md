@@ -27,6 +27,8 @@ And that you can copy a citation in Zotero when and item is selected:
 
 <img src="https://raw.githubusercontent.com/mgmeyers/obsidian-zotero-integration/main/screenshots/01.png" alt="A screenshot of this plugin's settings">
 
+In the plugin settings, you'll now find **Enable .bib auto-sync** and **Auto-sync debounce delay (ms)** below the Better BibTeX `.bib` File path. Enabling auto-sync will watch your `.bib` file for changes and patch your notes' frontmatter accordingly.
+
 <img src="https://raw.githubusercontent.com/mgmeyers/obsidian-zotero-integration/main/screenshots/02.png" alt="A screenshot of available plugin commands">
 
 <img src="https://raw.githubusercontent.com/mgmeyers/obsidian-zotero-integration/main/screenshots/03.png" alt="A screenshot of the Zotero search bar">
