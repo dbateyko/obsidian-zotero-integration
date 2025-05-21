@@ -226,7 +226,15 @@ export default class ZoteroConnector extends Plugin {
       setTimeout(async () => {
         const database = { database: this.settings.database, port: this.settings.port };
         if (await isZoteroRunning(database, true)) {
-          await this.importBbtCollection(true);
+          try {
+            await this.importBbtCollection(true);
+            new Notice('Attempting to sync metadata from .bib file on startup...', 3000);
+            await this.syncMetadataFromBib();
+            new Notice('Startup metadata sync complete.', 3000);
+          } catch (e) {
+            console.error('Error syncing metadata from .bib on startup:', e);
+            new Notice(`Error syncing metadata on startup: ${(e as Error).message}`, 7000);
+          }
         } else {
           console.warn('Zotero is not running; skipping autorun import.');
         }

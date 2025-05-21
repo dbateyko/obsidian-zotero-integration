@@ -232,7 +232,7 @@ function SettingsComponent({
       </SettingItem>
       <SettingItem
         name="Autorun .bib import on startup"
-        description="Automatically import new items from the Better BibTeX .bib file (debounced) when Obsidian starts, if Zotero is running."
+        description="On Obsidian startup, if Zotero is running: automatically import new items from the Better BibTeX .bib file, and synchronize metadata for existing imported items from this file."
       >
         <div
           onClick={() => {
