@@ -115,7 +115,8 @@ function convertNativeAnnotation(
   imageOutputPath: string,
   imageRelativePath: string,
   imageBaseName: string,
-  copy: boolean = false
+  copy: boolean = false,
+  silent: boolean = false
 ) {
   const annot: Record<string, any> = {
     date: moment(annotation.dateModified),
@@ -184,10 +185,12 @@ function convertNativeAnnotation(
 
         copyFileSync(input, imagePath);
       } catch (e) {
-        new Notice(
-          'Error: unable to copy annotation image from Zotero into your vault',
-          7000
-        );
+        if (!silent) {
+          new Notice(
+            'Error: unable to copy annotation image from Zotero into your vault',
+            7000
+          );
+        }
         console.error(e);
       }
     }
@@ -752,7 +755,8 @@ export async function exportToMarkdown(
             imageOutputPath,
             imageRelativePath,
             imageBaseName,
-            true
+            true,
+            silent
           )
         );
       });
@@ -764,7 +768,7 @@ export async function exportToMarkdown(
       if (isPDF && canExtract) {
         const pdfPath = attachmentPath;
         if (!existsSync(pdfPath)) {
-          console.warn(`PDF not found, skipping annotations for ${pdfPath}`);
+          if (!silent) console.warn(`PDF not found, skipping annotations for ${pdfPath}`);
         } else {
           try {
             const res = await extractAnnotations(
@@ -836,10 +840,12 @@ export async function exportToMarkdown(
 
       createdOrUpdatedMarkdownFiles.push(markdownPath);
     } catch (e) {
-      new Notice(
-        `Import failed for ${markdownPath}, check developer console for details`,
-        7000
-      );
+      if (!silent) {
+        new Notice(
+          `Import failed for ${markdownPath}, check developer console for details`,
+          7000
+        );
+      }
       console.error(e);
     }
   }
@@ -939,7 +945,9 @@ export async function dataExplorerPrompt(settings: ZoteroConnectorSettings) {
             attachment,
             path.join(vaultRoot, 'output_path'),
             'base_name',
-            'output_path'
+            'output_path',
+            false,
+            false
           )
         );
       });

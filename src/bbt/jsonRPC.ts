@@ -349,7 +349,7 @@ export async function getItemJSONFromCiteKeys(
   } catch (e) {
     console.error(e);
     if (!silent) modal.close();
-    new Notice(`Error retrieving item data: ${e.message}`, 10000);
+    if (!silent) new Notice(`Error retrieving item data: ${e.message}`, 10000);
     ZQueue.end(qid);
     return null;
   }
@@ -368,7 +368,7 @@ export async function getItemJSONFromCiteKeys(
       : JSON.parse(parsed.result).items;
   } catch (e) {
     console.error(e);
-    new Notice(`Error retrieving item data: ${e.message}`, 10000);
+    if (!silent) new Notice(`Error retrieving item data: ${e.message}`, 10000);
     return null;
   }
 }
@@ -415,7 +415,7 @@ export async function getItemJSONFromRelations(
   } catch (e) {
     console.error(e);
     if (!silent) modal.close();
-    new Notice(`Error retrieving item data: ${e.message}`, 10000);
+    if (!silent) new Notice(`Error retrieving item data: ${e.message}`, 10000);
     ZQueue.end(qid);
     return null;
   }
@@ -440,12 +440,12 @@ export async function getItemJSONFromRelations(
     });
   } catch (e) {
     console.error(e);
-    new Notice(`Error retrieving item data: ${e.message}`, 10000);
+    if (!silent) new Notice(`Error retrieving item data: ${e.message}`, 10000);
     return null;
   }
 
   const items: any[] = citekeys.length
-    ? await getItemJSONFromCiteKeys(citekeys, database, libraryID)
+    ? await getItemJSONFromCiteKeys(citekeys, database, libraryID, silent)
     : [];
 
   return idOrder.map((id) => {
@@ -498,7 +498,7 @@ export async function getIssueDateFromCiteKey(
   } catch (e) {
     console.error(e);
     if (!silent) modal.close();
-    new Notice(`Error retrieving item data: ${e.message}`, 10000);
+    if (!silent) new Notice(`Error retrieving item data: ${e.message}`, 10000);
     ZQueue.end(qid);
     return null;
   }
@@ -538,7 +538,7 @@ export async function getIssueDateFromCiteKey(
     return dates[0] ? dates[0] : null;
   } catch (e) {
     console.error(e);
-    new Notice(`Error retrieving item data: ${e.message}`, 10000);
+    if (!silent) new Notice(`Error retrieving item data: ${e.message}`, 10000);
     return null;
   }
 }

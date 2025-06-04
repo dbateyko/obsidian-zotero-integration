@@ -69,6 +69,7 @@ export async function processZoteroAnnotationNotes(
 
             copyFileSync(input, path.join(getVaultRoot(), destPath));
           } catch (e) {
+            // Note: exportNotes is always interactive, so we keep the notice
             new Notice(
               'Error: unable to copy annotation image from Zotero into your vault',
               7000
