@@ -1,10 +1,9 @@
 import Fuse from 'fuse.js';
-import { EditableFileView, Events, Plugin, TFile, FuzzySuggestModal, Notice, App } from 'obsidian';
+import { EditableFileView, Events, Plugin, TFile, FuzzySuggestModal, Notice } from 'obsidian';
 import { shellPath } from 'shell-path';
 import { debounce } from 'obsidian';
 import fs from 'fs';
 import path from 'path';
-import { parseBibToMetadataMap, diffMetadata, patchFrontmatterContent } from './bbt/bibSync';
 
 import { DataExplorerView, viewType } from './DataExplorerView';
 import { LoadingModal } from './bbt/LoadingModal';
@@ -77,6 +76,8 @@ export default class ZoteroConnector extends Plugin {
   settings: ZoteroConnectorSettings;
   emitter: Events;
   fuse: Fuse<CiteKeyExport>;
+  bibFileWatcher: fs.FSWatcher | undefined;
+  isUpdatingFromFileWatcher: boolean = false;
 
   async onload() {
     await this.loadSettings();
@@ -232,6 +233,9 @@ export default class ZoteroConnector extends Plugin {
         }
       }, 5000);
     }
+
+    // Initialize file watcher for autosync
+    this.initializeBibFileWatcher();
   }
 
   onunload() {
@@ -242,6 +246,12 @@ export default class ZoteroConnector extends Plugin {
     this.settings.exportFormats.forEach((f) => {
       this.removeExportCommand(f);
     });
+
+    // Clean up file watcher
+    if (this.bibFileWatcher) {
+      this.bibFileWatcher.close();
+      this.bibFileWatcher = undefined;
+    }
 
     this.app.workspace.detachLeavesOfType(viewType);
   }
@@ -539,18 +549,22 @@ export default class ZoteroConnector extends Plugin {
   }
 
   private async handleBibFileChange() {
-    new Notice('Detected .bib file change; syncing metadata...', 3000);
+    new Notice('Detected .bib file change; checking for new citations...', 3000);
     try {
-      await this.syncMetadataFromBib();
-      new Notice('Metadata sync complete', 3000);
+      await this.detectAndImportNewCitations();
     } catch (e) {
-      console.error('Error syncing metadata from .bib:', e);
-      new Notice(`Error syncing metadata: ${(e as Error).message}`, 5000);
+      console.error('Error processing .bib file changes:', e);
+      new Notice(`Error processing .bib file: ${(e as Error).message}`, 5000);
     }
   }
 
-  private async syncMetadataFromBib() {
+  private async detectAndImportNewCitations() {
     const bibPath = this.settings.betterBibFilePath;
+    if (!bibPath) {
+      new Notice('Better BibTeX .bib file path not set; cannot auto-import');
+      return;
+    }
+
     let content: string;
     try {
       content = fs.readFileSync(bibPath, 'utf-8');
@@ -559,27 +573,75 @@ export default class ZoteroConnector extends Plugin {
       new Notice(`Error reading .bib file: ${(e as Error).message}`, 7000);
       return;
     }
-    const newMap = parseBibToMetadataMap(content);
-    const oldMap = this.settings.metadataMap || {};
-    const diffs = diffMetadata(oldMap, newMap);
-    for (const citekey of Object.keys(diffs)) {
-      const fields = diffs[citekey];
-      const notePath = this.settings.importedItems[citekey];
-      if (notePath) {
-        const file = this.app.vault.getAbstractFileByPath(notePath);
-        if (file && file instanceof TFile) {
-          try {
-            const fileContent = await this.app.vault.read(file);
-            const updated = patchFrontmatterContent(fileContent, fields);
-            await this.app.vault.modify(file, updated);
-          } catch (err) {
-            console.error(`Error patching metadata for ${citekey}`, err);
-          }
-        }
+
+    // Extract all citation keys from .bib file
+    const citekeySet = new Set<string>();
+    const bibRegex = /@[^{]+\{([^,}]+)[,}]/g;
+    let match: RegExpExecArray | null;
+    while ((match = bibRegex.exec(content))) {
+      citekeySet.add(match[1].trim());
+    }
+
+    if (!citekeySet.size) {
+      new Notice('No citation keys found in .bib file');
+      return;
+    }
+
+    // Find new citations not yet imported
+    const imported = this.settings.importedItems;
+    const allKeys = Array.from(citekeySet).sort();
+    const newKeys = allKeys.filter((k) => !imported[k]);
+
+    if (!newKeys.length) {
+      new Notice('No new citations found', 2000);
+      return;
+    }
+
+    new Notice(`Found ${newKeys.length} new citation(s), importing...`, 3000);
+
+    // Check if we have import formats configured
+    const formats = this.settings.exportFormats;
+    if (!formats.length) {
+      new Notice('Error: No import formats configured. Please add an import format in plugin settings.');
+      return;
+    }
+
+    // Select format to use
+    let formatName: string;
+    if (formats.length === 1) {
+      formatName = formats[0].name;
+    } else {
+      const picked = await this.pickImportFormat(formats.map((f) => f.name));
+      if (!picked) {
+        return;
+      }
+      formatName = picked;
+    }
+
+    // Import new citations
+    const createdPaths: string[] = [];
+    for (const citekey of newKeys) {
+      try {
+        const paths = await this.runImport(formatName, citekey, 1, true, true);
+        createdPaths.push(...paths);
+        // Track imported items
+        this.settings.importedItems[citekey] = paths[0] || '';
+      } catch (e) {
+        console.error(`Error importing ${citekey}`, e);
+        new Notice(`Error importing ${citekey}`, 3000);
       }
     }
-    this.settings.metadataMap = newMap;
+
+    this.isUpdatingFromFileWatcher = true;
     await this.saveSettings();
+    this.isUpdatingFromFileWatcher = false;
+
+    if (createdPaths.length) {
+      this.openNotes(createdPaths);
+      new Notice(`Successfully imported ${createdPaths.length} new citation(s)`);
+    } else {
+      new Notice('No new items were imported');
+    }
   }
 
   async loadSettings() {
@@ -594,6 +656,10 @@ export default class ZoteroConnector extends Plugin {
   async saveSettings() {
     this.emitter.trigger('settingsUpdated');
     await this.saveData(this.settings);
+    // Reinitialize file watcher when settings change (but not during auto-import)
+    if (!this.isUpdatingFromFileWatcher) {
+      this.initializeBibFileWatcher();
+    }
   }
 
   deactivateDataExplorer() {
