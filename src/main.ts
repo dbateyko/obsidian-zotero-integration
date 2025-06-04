@@ -26,7 +26,9 @@ import {
   CiteKeyExport,
   ExportFormat,
   ZoteroConnectorSettings,
+  DatabaseWithPort,
 } from './types';
+import { AnnotationCacheManager } from './bbt/annotationCache';
 
 const commandPrefix = 'obsidian-zotero-desktop-connector:';
 const citationCommandIDPrefix = 'zdc-';
@@ -49,6 +51,14 @@ const DEFAULT_SETTINGS: ZoteroConnectorSettings = {
   whichNotesToOpenAfterImport: 'first-imported-note',
   importedItems: {},
   autorunOnStartup: false,
+  annotationCache: {},
+  annotationMonitoring: {
+    enabled: false, // Start disabled until user opts in
+    checkIntervalMinutes: 10,
+    maxItemsPerBatch: 20,
+    enableNotifications: true,
+  },
+  lastAnnotationCheck: 0,
 };
 
 async function fixPath() {
@@ -78,6 +88,8 @@ export default class ZoteroConnector extends Plugin {
   fuse: Fuse<CiteKeyExport>;
   bibFileWatcher: fs.FSWatcher | undefined;
   isUpdatingFromFileWatcher: boolean = false;
+  annotationMonitorInterval: NodeJS.Timeout | undefined;
+  isMonitoringAnnotations: boolean = false;
 
   async onload() {
     await this.loadSettings();
@@ -211,6 +223,43 @@ export default class ZoteroConnector extends Plugin {
       },
     });
 
+    this.addCommand({
+      id: 'zdc-check-annotation-changes',
+      name: 'Check for annotation changes',
+      callback: async () => {
+        if (this.isMonitoringAnnotations) {
+          new Notice('Annotation check already in progress');
+          return;
+        }
+        
+        new Notice('Checking for annotation changes...');
+        await this.checkForAnnotationChanges();
+        new Notice('Annotation check completed');
+      },
+    });
+
+    this.addCommand({
+      id: 'zdc-clear-annotation-cache',
+      name: 'Clear annotation cache',
+      callback: async () => {
+        this.settings.annotationCache = {};
+        await this.saveSettings();
+        new Notice('Annotation cache cleared');
+      },
+    });
+
+    this.addCommand({
+      id: 'zdc-toggle-annotation-monitoring',
+      name: 'Toggle annotation monitoring',
+      callback: async () => {
+        this.settings.annotationMonitoring.enabled = !this.settings.annotationMonitoring.enabled;
+        await this.saveSettings();
+        
+        const status = this.settings.annotationMonitoring.enabled ? 'enabled' : 'disabled';
+        new Notice(`Annotation monitoring ${status}`);
+      },
+    });
+
     this.registerEvent(
       this.app.vault.on('modify', (file) => {
         if (file instanceof TFile) {
@@ -236,6 +285,9 @@ export default class ZoteroConnector extends Plugin {
 
     // Initialize file watcher for autosync
     this.initializeBibFileWatcher();
+
+    // Initialize annotation monitoring after other setup
+    this.initializeAnnotationMonitoring();
   }
 
   onunload() {
@@ -252,6 +304,9 @@ export default class ZoteroConnector extends Plugin {
       this.bibFileWatcher.close();
       this.bibFileWatcher = undefined;
     }
+
+    // Stop annotation monitoring
+    this.stopAnnotationMonitoring();
 
     this.app.workspace.detachLeavesOfType(viewType);
   }
@@ -592,6 +647,12 @@ export default class ZoteroConnector extends Plugin {
     const allKeys = Array.from(citekeySet).sort();
     const newKeys = allKeys.filter((k) => !imported[k]);
 
+    // Debug logging
+    console.log('[Zotero Autosync] Total keys in .bib file:', allKeys.length);
+    console.log('[Zotero Autosync] Already imported keys:', Object.keys(imported).length);
+    console.log('[Zotero Autosync] New keys to import:', newKeys.length);
+    console.log('[Zotero Autosync] Imported items map:', imported);
+
     if (!newKeys.length) {
       new Notice('No new citations found', 2000);
       return;
@@ -659,6 +720,13 @@ export default class ZoteroConnector extends Plugin {
     // Reinitialize file watcher when settings change (but not during auto-import)
     if (!this.isUpdatingFromFileWatcher) {
       this.initializeBibFileWatcher();
+      
+      // Restart annotation monitoring if settings changed
+      if (this.settings.annotationMonitoring.enabled) {
+        this.startAnnotationMonitoring();
+      } else {
+        this.stopAnnotationMonitoring();
+      }
     }
   }
 
@@ -707,5 +775,149 @@ export default class ZoteroConnector extends Plugin {
 
       modal.close();
     }
+  }
+
+  /**
+   * Initialize annotation monitoring
+   */
+  private initializeAnnotationMonitoring() {
+    if (!this.settings.annotationMonitoring.enabled) {
+      return;
+    }
+
+    this.startAnnotationMonitoring();
+  }
+
+  /**
+   * Start annotation monitoring with configured interval
+   */
+  private startAnnotationMonitoring() {
+    if (this.annotationMonitorInterval) {
+      clearInterval(this.annotationMonitorInterval);
+    }
+
+    const intervalMs = this.settings.annotationMonitoring.checkIntervalMinutes * 60 * 1000;
+    
+    this.annotationMonitorInterval = setInterval(() => {
+      this.checkForAnnotationChanges();
+    }, intervalMs);
+
+    console.log(`[Annotation Monitor] Started with ${this.settings.annotationMonitoring.checkIntervalMinutes}min interval`);
+  }
+
+  /**
+   * Stop annotation monitoring
+   */
+  private stopAnnotationMonitoring() {
+    if (this.annotationMonitorInterval) {
+      clearInterval(this.annotationMonitorInterval);
+      this.annotationMonitorInterval = undefined;
+    }
+    console.log('[Annotation Monitor] Stopped');
+  }
+
+  /**
+   * Check for annotation changes on imported items
+   */
+  private async checkForAnnotationChanges() {
+    if (this.isMonitoringAnnotations) {
+      console.log('[Annotation Monitor] Check already in progress, skipping...');
+      return;
+    }
+
+    this.isMonitoringAnnotations = true;
+    console.log('[Annotation Monitor] Starting annotation check...');
+
+    try {
+      const database = { database: this.settings.database, port: this.settings.port };
+      const importedCitekeys = Object.keys(this.settings.importedItems);
+      const maxBatch = this.settings.annotationMonitoring.maxItemsPerBatch;
+
+      // Process in batches to avoid overwhelming Zotero
+      for (let i = 0; i < importedCitekeys.length; i += maxBatch) {
+        const batch = importedCitekeys.slice(i, i + maxBatch);
+        await this.processBatchAnnotationCheck(batch, database);
+        
+        // Brief pause between batches
+        if (i + maxBatch < importedCitekeys.length) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      }
+
+      this.settings.lastAnnotationCheck = Date.now();
+      await this.saveSettings();
+
+    } catch (error) {
+      console.error('[Annotation Monitor] Error during annotation check:', error);
+    } finally {
+      this.isMonitoringAnnotations = false;
+      console.log('[Annotation Monitor] Check completed');
+    }
+  }
+
+  /**
+   * Process a batch of citations for annotation changes
+   */
+  private async processBatchAnnotationCheck(citekeys: string[], database: DatabaseWithPort) {
+    for (const citekey of citekeys) {
+      try {
+        const result = await AnnotationCacheManager.updateCacheEntry(
+          citekey,
+          database,
+          this.settings.annotationCache,
+          true // silent
+        );
+
+        if (result && result.changes.hasChanges) {
+          console.log(`[Annotation Monitor] Changes detected for ${citekey}:`, {
+            new: result.changes.newAnnotations.length,
+            modified: result.changes.modifiedAnnotations.length,
+            deleted: result.changes.deletedAnnotations.length,
+          });
+
+          // Update cache
+          this.settings.annotationCache[citekey] = result.entry;
+
+          // Handle the changes
+          await this.handleAnnotationChanges(citekey, result.changes);
+        } else if (result) {
+          // Update cache even if no changes (updates lastChecked)
+          this.settings.annotationCache[citekey] = result.entry;
+        }
+
+      } catch (error) {
+        console.error(`[Annotation Monitor] Error checking ${citekey}:`, error);
+      }
+    }
+  }
+
+  /**
+   * Handle detected annotation changes
+   */
+  private async handleAnnotationChanges(
+    citekey: string, 
+    changes: ReturnType<typeof AnnotationCacheManager.detectChanges>
+  ) {
+    const { newAnnotations, modifiedAnnotations, deletedAnnotations } = changes;
+
+    if (this.settings.annotationMonitoring.enableNotifications) {
+      const message = `${citekey}: `;
+      const parts = [];
+      
+      if (newAnnotations.length > 0) {
+        parts.push(`${newAnnotations.length} new annotation${newAnnotations.length > 1 ? 's' : ''}`);
+      }
+      if (modifiedAnnotations.length > 0) {
+        parts.push(`${modifiedAnnotations.length} modified`);
+      }
+      if (deletedAnnotations.length > 0) {
+        parts.push(`${deletedAnnotations.length} deleted`);
+      }
+
+      new Notice(message + parts.join(', '), 5000);
+    }
+
+    // TODO: In Phase 4, trigger selective re-import here
+    console.log(`[Annotation Monitor] Would re-import ${citekey} due to annotation changes`);
   }
 }

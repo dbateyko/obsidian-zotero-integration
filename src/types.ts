@@ -109,10 +109,39 @@ export interface ZoteroConnectorSettings {
   importedItems: Record<string, string>;
   autorunOnStartup: boolean;
   whichNotesToOpenAfterImport: NotesToOpenAfterImport;
+  annotationCache: Record<string, AnnotationCacheEntry>;
+  annotationMonitoring: AnnotationMonitoringSettings;
+  lastAnnotationCheck: number;
 }
 
 export interface CiteKeyExport {
   libraryID: number;
   citekey: string;
   title: string;
+}
+
+export interface AnnotationSnapshot {
+  id: string;
+  type: string;
+  content: string;
+  contentHash: string;
+  dateModified: string;
+  pageLabel?: string;
+  color?: string;
+  imagePath?: string;
+}
+
+export interface AnnotationCacheEntry {
+  citekey: string;
+  lastChecked: number;
+  annotationCount: number;
+  annotations: AnnotationSnapshot[];
+  contentHash: string; // Hash of all annotations combined
+}
+
+export interface AnnotationMonitoringSettings {
+  enabled: boolean;
+  checkIntervalMinutes: number;
+  maxItemsPerBatch: number;
+  enableNotifications: boolean;
 }

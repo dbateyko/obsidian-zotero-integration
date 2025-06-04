@@ -49,6 +49,10 @@ function SettingsComponent({
 
   const [ocrState, setOCRState] = React.useState(settings.pdfExportImageOCR);
 
+  const [annotationMonitoring, setAnnotationMonitoring] = React.useState(
+    settings.annotationMonitoring
+  );
+
   const [concat, setConcat] = React.useState(!!settings.shouldConcat);
   const [autorunState, setAutorun] = React.useState(
     !!settings.autorunOnStartup
@@ -229,6 +233,62 @@ function SettingsComponent({
           }}
           defaultValue={debounceDelayState.toString()}
         />
+      </SettingItem>
+      <SettingItem
+        name="Annotation Monitoring"
+        description="Monitor existing citations for new annotations"
+      >
+        <div
+          onClick={() => {
+            const updated = { ...annotationMonitoring, enabled: !annotationMonitoring.enabled };
+            setAnnotationMonitoring(updated);
+            updateSetting('annotationMonitoring', updated);
+          }}
+          className={`checkbox-container${
+            annotationMonitoring.enabled ? ' is-enabled' : ''
+          }`}
+        />
+        {annotationMonitoring.enabled && (
+          <div style={{ marginTop: '10px' }}>
+            <SettingItem
+              name="Check interval (minutes)"
+              description=""
+            >
+              <input
+                type="number"
+                min="1"
+                max="60"
+                onChange={(e) => {
+                  const updated = { 
+                    ...annotationMonitoring, 
+                    checkIntervalMinutes: parseInt((e.target as HTMLInputElement).value) || 10 
+                  };
+                  setAnnotationMonitoring(updated);
+                  updateSetting('annotationMonitoring', updated);
+                }}
+                defaultValue={annotationMonitoring.checkIntervalMinutes.toString()}
+              />
+            </SettingItem>
+            <SettingItem
+              name="Show notifications"
+              description="Display notifications when new annotations are found"
+            >
+              <div
+                onClick={() => {
+                  const updated = { 
+                    ...annotationMonitoring, 
+                    enableNotifications: !annotationMonitoring.enableNotifications 
+                  };
+                  setAnnotationMonitoring(updated);
+                  updateSetting('annotationMonitoring', updated);
+                }}
+                className={`checkbox-container${
+                  annotationMonitoring.enableNotifications ? ' is-enabled' : ''
+                }`}
+              />
+            </SettingItem>
+          </div>
+        )}
       </SettingItem>
       <SettingItem
         name="Autorun .bib import on startup"

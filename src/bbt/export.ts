@@ -784,7 +784,8 @@ export async function exportToMarkdown(
                 tesseractPath: settings.pdfExportImageTesseractPath,
                 tessDataDir: settings.pdfExportImageTessDataDir,
               },
-              settings.exeOverridePath
+              settings.exeOverridePath,
+              silent
             );
 
             let extracted = JSON.parse(res);
@@ -972,7 +973,8 @@ export async function dataExplorerPrompt(settings: ZoteroConnectorSettings) {
               tesseractPath: settings.pdfExportImageTesseractPath,
               tessDataDir: settings.pdfExportImageTessDataDir,
             },
-            settings.exeOverridePath
+            settings.exeOverridePath,
+            false
           );
 
           let extracted = JSON.parse(res);

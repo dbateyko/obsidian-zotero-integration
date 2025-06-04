@@ -36,10 +36,14 @@ const paramMap: Record<keyof ExtractParams, string> = {
 export async function extractAnnotations(
   input: string,
   params: ExtractParams,
-  overridePath?: string
+  overridePath?: string,
+  silent: boolean = false
 ) {
-  const modal = new LoadingModal(app, 'Extracting annotations...');
-  modal.open();
+  let modal: LoadingModal | undefined;
+  if (!silent) {
+    modal = new LoadingModal(app, 'Extracting annotations...');
+    modal.open();
+  }
 
   const args = [input];
 
@@ -77,7 +81,7 @@ export async function extractAnnotations(
       args
     );
 
-    modal.close();
+    modal?.close();
 
     if (result.stderr.toLowerCase().includes('password')) {
       new Notice(
@@ -94,7 +98,7 @@ export async function extractAnnotations(
 
     return result.stdout;
   } catch (e) {
-    modal.close();
+    modal?.close();
 
     if (e.message.toLowerCase().includes('password')) {
       new Notice(
