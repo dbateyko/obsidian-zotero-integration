@@ -3,7 +3,7 @@ import { Notice, request } from 'obsidian';
 import { getCurrentWindow } from '../helpers';
 import { CitationFormat, DatabaseWithPort } from '../types';
 import { LoadingModal } from './LoadingModal';
-import { defaultHeaders, getPort } from './helpers';
+import { defaultHeaders, getPort, makeZoteroRequest } from './helpers';
 import { getBibFromCiteKeys } from './jsonRPC';
 import { ZQueue } from './queue';
 
@@ -29,33 +29,47 @@ export async function isZoteroRunning(
 
   let modal: LoadingModal;
   if (!silent) {
-    modal = new LoadingModal(app, 'Fetching data from Zotero...');
+    modal = new LoadingModal(app, 'Checking Zotero connection...');
     modal.open();
   }
   const qid = Symbol();
   try {
     await ZQueue.wait(qid);
-    const res = await request({
+    const res = await makeZoteroRequest({
       method: 'GET',
       url: `http://127.0.0.1:${getPort(
         database.database,
         database.port
       )}/better-bibtex/cayw?probe=true`,
       headers: defaultHeaders,
+      retryOnFailure: true,
+      silent,
     });
 
     modal?.close();
     cachedIsRunning = res === 'ready';
     lastCheck = Date.now();
     ZQueue.end(qid);
+    
+    if (!cachedIsRunning && !silent) {
+      new Notice(
+        'Cannot connect to Zotero. Please ensure it is running and the Better BibTeX plugin is installed.',
+        8000
+      );
+    }
+    
     return cachedIsRunning;
   } catch (e) {
     modal?.close();
-    !silent &&
+    cachedIsRunning = false;
+    lastCheck = Date.now();
+    
+    if (!silent) {
       new Notice(
-        'Cannot connect to Zotero. Please ensure it is running and the Better BibTeX plugin is installed',
-        10000
+        'Cannot connect to Zotero. Please ensure it is running and the Better BibTeX plugin is installed.',
+        8000
       );
+    }
     ZQueue.end(qid);
     return false;
   }

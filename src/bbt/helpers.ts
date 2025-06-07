@@ -1,4 +1,5 @@
 import path from 'path';
+import { request } from 'obsidian';
 import { Database } from 'src/types';
 
 export const defaultHeaders = {
@@ -7,6 +8,43 @@ export const defaultHeaders = {
   Accept: 'application/json',
   Connection: 'keep-alive',
 };
+
+export interface ZoteroRequestOptions {
+  method: 'GET' | 'POST';
+  url: string;
+  body?: string;
+  headers?: Record<string, string>;
+  retryOnFailure?: boolean;
+  silent?: boolean;
+}
+
+export async function makeZoteroRequest(options: ZoteroRequestOptions): Promise<string | null> {
+  const { retryOnFailure = true, silent = false, ...requestOptions } = options;
+  
+  const maxAttempts = retryOnFailure ? 2 : 1;
+  
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const result = await request(requestOptions);
+      return result;
+    } catch (error) {
+      if (attempt === maxAttempts) {
+        // This is the final attempt, handle the error
+        if (!silent) {
+          console.error(`Zotero connection failed after ${maxAttempts} attempts:`, error);
+        }
+        break;
+      }
+      
+      // Wait briefly before retry (only on first failure)
+      if (attempt === 1) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+    }
+  }
+  
+  return null;
+}
 
 export function getPort(database: Database, port?: string) {
   if (database === 'Zotero') return '23119';

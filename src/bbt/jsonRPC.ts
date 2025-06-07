@@ -4,7 +4,7 @@ import { padNumber } from '../helpers';
 import { CiteKeyExport, DatabaseWithPort } from '../types';
 import { LoadingModal } from './LoadingModal';
 import { CiteKey, getCiteKeyFromAny, isZoteroRunning } from './cayw';
-import { defaultHeaders, getPort } from './helpers';
+import { defaultHeaders, getPort, makeZoteroRequest } from './helpers';
 import { ZQueue } from './queue';
 
 export async function getNotesFromCiteKeys(
@@ -268,7 +268,7 @@ export async function getBibFromCiteKeys(
     }
 
     await ZQueue.wait(qid);
-    res = await request({
+    res = await makeZoteroRequest({
       method: 'POST',
       url: `http://127.0.0.1:${getPort(
         database.database,
@@ -280,11 +280,22 @@ export async function getBibFromCiteKeys(
         params: [citeKeys.map((k) => k.key), params, citeKeys[0].library],
       }),
       headers: defaultHeaders,
+      retryOnFailure: true,
+      silent,
     });
+
+    if (!res) {
+      throw new Error('Failed to connect to Zotero after retry attempts');
+    }
   } catch (e) {
     console.error(e);
     !silent && modal.close();
-    new Notice(`Error retrieving formatted bibliography: ${e.message}`, 10000);
+    
+    const errorMessage = e.message?.includes('Failed to connect') 
+      ? 'Cannot connect to Zotero. Please ensure it is running and the Better BibTeX plugin is installed.'
+      : `Error retrieving formatted bibliography: ${e.message}`;
+    
+    new Notice(errorMessage, 8000);
     ZQueue.end(qid);
     return null;
   }
@@ -347,9 +358,11 @@ export async function getItemJSONFromCiteKeys(
       headers: defaultHeaders,
     });
   } catch (e) {
-    console.error(e);
-    if (!silent) modal.close();
-    if (!silent) new Notice(`Error retrieving item data: ${e.message}`, 10000);
+    if (!silent) {
+      console.error(e);
+      modal.close();
+      new Notice(`Error retrieving item data: ${e.message}`, 10000);
+    }
     ZQueue.end(qid);
     return null;
   }
@@ -367,8 +380,10 @@ export async function getItemJSONFromCiteKeys(
       ? JSON.parse(parsed.result[2]).items
       : JSON.parse(parsed.result).items;
   } catch (e) {
-    console.error(e);
-    if (!silent) new Notice(`Error retrieving item data: ${e.message}`, 10000);
+    if (!silent) {
+      console.error(e);
+      new Notice(`Error retrieving item data: ${e.message}`, 10000);
+    }
     return null;
   }
 }
@@ -587,15 +602,21 @@ export async function getCiteKeyExport(
   const qid = Symbol();
   try {
     await ZQueue.wait(qid);
-    const res = await request({
+    const res = await makeZoteroRequest({
       method: 'GET',
       url: `http://127.0.0.1:${getPort(
         database.database,
         database.port
       )}/better-bibtex/export/library?/${groupId}/${groupName}.${translatorId}`,
       headers: defaultHeaders,
+      retryOnFailure: true,
+      silent: true,
     });
     ZQueue.end(qid);
+
+    if (!res) {
+      return null;
+    }
 
     const entries = JSON.parse(res);
 
@@ -633,7 +654,7 @@ export async function getUserGroups(database: DatabaseWithPort) {
   const qid = Symbol();
   try {
     await ZQueue.wait(qid);
-    res = await request({
+    res = await makeZoteroRequest({
       method: 'POST',
       url: `http://127.0.0.1:${getPort(
         database.database,
@@ -645,7 +666,14 @@ export async function getUserGroups(database: DatabaseWithPort) {
         params: [],
       }),
       headers: defaultHeaders,
+      retryOnFailure: true,
+      silent: true,
     });
+
+    if (!res) {
+      ZQueue.end(qid);
+      return null;
+    }
   } catch (e) {
     console.error(e);
     ZQueue.end(qid);
@@ -672,7 +700,9 @@ export async function getAllCiteKeys(
     return { citekeys: cachedKeys, fromCache: true };
   }
 
+  // Check if Zotero is running with silent flag to avoid UI noise
   if (!(await isZoteroRunning(database, true))) {
+    // Return cached data if available, empty array if not
     return { citekeys: cachedKeys, fromCache: true };
   }
 
@@ -680,6 +710,7 @@ export async function getAllCiteKeys(
   const userGroups = await getUserGroups(database);
 
   if (!userGroups) {
+    // If getUserGroups fails but Zotero was running, keep existing cache
     return { citekeys: cachedKeys, fromCache: true };
   }
 
@@ -691,8 +722,11 @@ export async function getAllCiteKeys(
     }
   }
 
-  cachedKeys = allKeys;
-  lastCheck = Date.now();
+  // Only update cache if we successfully got data
+  if (allKeys.length > 0 || cachedKeys.length === 0) {
+    cachedKeys = allKeys;
+    lastCheck = Date.now();
+  }
 
-  return { citekeys: allKeys, fromCache: false };
+  return { citekeys: allKeys.length > 0 ? allKeys : cachedKeys, fromCache: allKeys.length === 0 };
 }
